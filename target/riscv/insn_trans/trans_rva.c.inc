@@ -58,11 +58,30 @@ static bool gen_lr(DisasContext *ctx, arg_atomic *a, MemOp mop)
 static bool gen_sc(DisasContext *ctx, arg_atomic *a, MemOp mop)
 {
     TCGv dest, src1, src2;
+    TCGv tmp = tcg_temp_new();
+    TCGLabel *l3 = gen_new_label();
     TCGLabel *l1 = gen_new_label();
     TCGLabel *l2 = gen_new_label();
 
     decode_save_opc(ctx, 0);
     src1 = get_address(ctx, a->rs1, 0);
+    /*
+     * A misaligned store trap should be triggered even if the store should
+     * fail due to the reservation.
+     */
+    tcg_gen_andi_tl(tmp, src1, ~((uint64_t)0) << memop_alignment_bits(mop));
+    tcg_gen_brcond_tl(TCG_COND_EQ, tmp, src1, l3);
+
+    /*
+     * Store the faulty address, and the actual PC.  Then generate the
+     * exception.
+     */
+    tcg_gen_st_tl(src1, tcg_env, offsetof(CPURISCVState, badaddr));
+    gen_pc_plus_diff(cpu_pc, ctx, 0);
+    gen_helper_raise_exception(tcg_env,
+                               tcg_constant_i32(RISCV_EXCP_STORE_AMO_ADDR_MIS));
+
+    gen_set_label(l3);
     tcg_gen_brcond_tl(TCG_COND_NE, load_res, src1, l1);
 
     /*
