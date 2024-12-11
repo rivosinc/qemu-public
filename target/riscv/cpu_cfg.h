@@ -175,6 +175,7 @@ struct RISCVCPUConfig {
     bool pmp;
     bool debug;
     bool misa_w;
+    bool trap_misaligned_access;
 
     bool short_isa_string;
 
